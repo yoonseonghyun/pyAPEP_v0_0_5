@@ -18,7 +18,9 @@ import pyapep.simsep as papse
 c1 = papse.column()
 ```
 [equation]
+begin{equation}
 $ \frac{ C_{i} }{ t } $
+end{equation}
 
 
 # Modules
