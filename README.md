@@ -13,6 +13,11 @@ You can install this package by using pip.
 pip install pyapep
 ```
 
+``` r
+import pyapep.simsep as papse
+c1 = papse.c1()
+```
+
 # Modules
 There are several modules related to the adsorption processes:
 - [1) simsep](https://github.com/sebyga/pyAPEP_v0_0_5#simsep-Module-for-Adsorption-Separation-Processes)
