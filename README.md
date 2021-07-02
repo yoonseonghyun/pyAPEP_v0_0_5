@@ -31,6 +31,9 @@ There are several modules related to the adsorption processes:
 
 # simsep Module for Adsorption Separation Processes
 
+Edit the equation:
+$$ x = \frac{1}{2} \times m c^{2}$$
+
 # simsto Module for Adsorption Storage Processes
 
 # simide Module Ideal Adsorption Processes
