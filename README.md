@@ -18,7 +18,7 @@ import pyapep.simsep as papse
 c1 = papse.column()
 ```
 
-$\frac{\partial C_{i}}{\partial t}$
+$ \frac{ \partial C_{i} }{ \partial t } $
 
 
 # Modules
