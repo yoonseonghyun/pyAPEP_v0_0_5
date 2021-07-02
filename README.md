@@ -15,9 +15,9 @@ pip install pyapep
 
 # Modules
 There are several modules related to the adsorption processes:
-- [1) simsep](https://github.com/sebyga/pyAPEP_v0_0_5#simsep-Module-for-Adsorption-Separation-Processes)
-- [2) simsto](https://github.com/sebyga/pyAPEP_v0_0_5#simsto-Module-for-Adsorption-Storage-Processes)
-- [3) simide](https://github.com/sebyga/pyAPEP_v0_0_5#simide-Module-Ideal-Adsorption-Processes)
+-- [1) simsep](https://github.com/sebyga/pyAPEP_v0_0_5#simsep-Module-for-Adsorption-Separation-Processes)
+-- [2) simsto](https://github.com/sebyga/pyAPEP_v0_0_5#simsto-Module-for-Adsorption-Storage-Processes)
+-- [3) simide](https://github.com/sebyga/pyAPEP_v0_0_5#simide-Module-Ideal-Adsorption-Processes)
 
 # simsep Module for Adsorption Separation Processes
 
