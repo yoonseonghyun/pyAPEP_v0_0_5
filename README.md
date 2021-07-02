@@ -17,7 +17,7 @@ pip install pyapep
 import pyapep.simsep as papse
 c1 = papse.column()
 ```
-
+[equation]
 $ \frac{ C_{i} }{ t } $
 
 
