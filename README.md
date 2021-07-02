@@ -1,8 +1,6 @@
 # pyAPEP
 This is for developing python-based Adsorption Process Evaluation Package (pyapep).
 
-
-
 - [01 - Installation](https://github.com/sebyga/pyAPEP_v0_0_5#Installation)
 - [02 - Modules](https://github.com/sebyga/pyAPEP_v0_0_5#Modules)
 
@@ -17,11 +15,8 @@ pip install pyapep
 import pyapep.simsep as papse
 c1 = papse.column()
 ```
-[equation]
-begin{equation}
-$ \frac{ C_{i} }{ t } $
-end{equation}
 
+Super- and sub- script: x<sup>2</sup> and x<sub>2</sub>
 
 # Modules
 There are several modules related to the adsorption processes:
