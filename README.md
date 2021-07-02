@@ -15,7 +15,7 @@ pip install pyapep
 
 ``` r
 import pyapep.simsep as papse
-c1 = papse.c1()
+c1 = papse.column()
 ```
 
 # Modules
