@@ -18,6 +18,9 @@ import pyapep.simsep as papse
 c1 = papse.column()
 ```
 
+$\frac{\partial C_{i}}{\partial t}$
+
+
 # Modules
 There are several modules related to the adsorption processes:
 - [1) simsep](https://github.com/sebyga/pyAPEP_v0_0_5#simsep-Module-for-Adsorption-Separation-Processes)
