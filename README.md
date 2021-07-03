@@ -1,5 +1,5 @@
 
-<img src="/img/pyapep_logo01.png" width="20%" height="20%">
+<img src="/img/pyapep_logo03.png" width="20%" height="20%">
 
 
 # pyAPEP
@@ -40,4 +40,4 @@ $$ x = \frac{1}{2} \times m c^{2}$$
 
 # Original Image:
 
-![icon_pyapep](/img/pyapep_logo01.png){: width="30%" height="30%"}
+![icon_pyapep](/img/pyapep_logo03.png)
