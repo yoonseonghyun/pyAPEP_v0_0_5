@@ -711,7 +711,7 @@ class column:
  
     def Graph(self, every_n_sec, index, 
               loc = [1,1], yaxis_label = None, 
-              file_name = 'Graph_y.png', y = None,):
+              file_name = None, y = None,):
         N = self._N
         one_sec = self._n_sec
         n_show = one_sec*every_n_sec
@@ -736,12 +736,15 @@ class column:
         ax.set_xlabel('z-domain (m)', fontsize = 15)
         if yaxis_label == None:
             ylab = 'Variable index = {}'.format(index)
+            ax.set_ylabel(ylab, fontsize = 15)
         else:
             ax.set_ylabel(yaxis_label, fontsize = 15)
         plt.xticks(fontsize = 13)
         plt.yticks(fontsize = 13)
-        fig.savefig(file_name, bbox_inches='tight')
-        #fig.show()
+        if file_name != None:
+            fig.savefig(file_name, bbox_inches='tight')
+        else:
+            plt.show()
         return fig, ax
         
     def Graph_P(self, every_n_sec, loc = [1,1], 
