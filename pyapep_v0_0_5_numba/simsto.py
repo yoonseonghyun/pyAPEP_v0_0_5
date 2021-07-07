@@ -20,9 +20,12 @@ class tank:
         self._required = {'Design':True,
         'adsorbent_info':False,
         'gas_prop_info': False,
-        'mass_trans_info': False,}
+        'mass_trans_info': False,
+        }
         if E_balance:
             self._required['thermal_info'] = False
+        self._required['feed_flow_info'] = False
+        self._required['initialC_info'] = False        
     def __str__(self):
         str_return = '[[Current information included here]] \n'
         for kk in self._required.keys():
@@ -34,25 +37,6 @@ class tank:
             else:
                 str_return = str_return + ': False\n'
         return str_return
-    def adsorbent_info(self, iso_fn, epsi = 0.3, rho_s = 1000, P_test_range=[0,10], T_test_range = [273,373]):
-        T_test = np.linspace(T_test_range[0], T_test_range[1],self._N)
-        p_test = []
-        for ii in range(self._n_comp):
-            p_tmp = P_test_range[0] + np.random.random(self._N)*(P_test_range[1] - P_test_range[0])
-            p_test.append(p_tmp)        
-        try:      
-            iso_test = iso_fn(p_test, T_test)
-            if len(iso_test) != self._n_comp:
-                print('Output should be a list/narray including {} narray!'.format(self._n_comp))
-            else:
-                self._iso = iso_fn
-                self._rho_s = rho_s
-                self._epsi = epsi
-                self._required['adsorbent_info'] = True
-        except:
-            print('You have problem in iso_fn')
-            print('Input should be ( [p1_array,p2_array, ...] and T_array )')
-            print('Output should be a list/narray including {} narray!'.format(self._n_comp))
     def adsorbent_info(self, iso_fn, epsi = 0.3, rho_s = 1000,P_test_range=[0,10], T_test_range = [273,373]):
         T_test = np.linspace(T_test_range[0], T_test_range[1],6)
         p_test = np.zeros([self._n_comp, 6])
@@ -84,7 +68,6 @@ class tank:
             self._required['gas_prop_info'] = True
     def mass_trans_info(self, k_mass_transfer, a_specific_surf):
         stack_true = 0
-        
         if len(k_mass_transfer) == self._n_comp:
             if np.isscalar(k_mass_transfer[0]):
                 order = 1
@@ -99,6 +82,54 @@ class tank:
             self._k_mtc = k_mass_transfer
             self._a_surf = a_specific_surf
             self._required['mass_trans_info'] = True
+
+    def feed_flow_info(self, P_inlet, T_inlet, y_inlet, Cv):
+        true_stack = 0
+        if np.isscalar(P_inlet):
+            true_stack = true_stack + 1
+        else:
+            print("P_inlet should be scalar !!")
+        if np.isscalar(T_inlet):
+            true_stack = true_stack + 1
+        else:
+            print("T_inlet should be scalar !!")
+        if np.isscalar(Cv):
+            true_stack = true_stack + 1
+        else:
+            print("Cv (valve constant: m^3/sec/bar) should be scalar !!")
+        if len(y_inlet) == self._n_comp:
+            true_stack = true_stack + 1
+        else:
+            print("y_in should be [{0:1d},] narray/list !!".format(self._n_comp))            
+        if true_stack == 4:
+            self._P_inlet = P_inlet
+            self._T_inlet = T_inlet
+            self._y_inlet = y_inlet
+            self._Cv   = Cv
+            self._required['feed_flow_info'] = True
+
+    def initialC_info(self, P,T,y,q = None):
+        if q == None:
+            try:
+                q = self._iso(P*np.array(y),T)
+            except:
+                print('Isotherm model is inappropriate! First use "adsorbent_info."')
+                print('Or assign the initial uptake (mol/kg) ')
+                return
+        if np.isscalar(P) == False:
+            print('P should be a scalar.')
+            return
+        if np.isscalar(T) == False:
+            print('P should be a scalar.')
+            return
+        if len(y) != self._n_comp:
+            print('y (gas composition) should be a ({0:1d}) list/narray.'.format(self._n_comp))
+            return
+        self._P_init = P
+        self._T_init = T
+        self._y_init = y
+        self._q_init = q
+        self._required['initialC_info'] = True
 
     def thermal_info(self, dH_adsorption,
                      Cp_solid, Cp_gas):
@@ -117,112 +148,212 @@ class tank:
             self._Cp_s = Cp_solid
             self._Cp_g = Cp_gas
             self._required['thermal_info'] = True
-
     
+    
+    def run_mamoen(self, t_max, n_sec = 5):
+        t_max_int = np.int32(np.floor(t_max))
+        self._n_sec = n_sec
+        n_t = t_max_int*n_sec+ 1
+        n_comp = self._n_comp
+        C_sta = []
+        for ii in range(n_comp):
+            C_sta.append(self._y_inlet[ii]*self._P_inlet/R_gas/self._T_inlet*1E5)
+        t_dom = np.linspace(0,t_max_int, n_t)
+        if t_max_int < t_max:
+            t_dom = np.concatenate((t_dom, [t_max]))
+        
+        ## Column design ##
+        epsi = self._epsi   # macroscopic void fraction (m^3/m^3)
+        A_cr = self._A      # cross-sectional area (m^2)
+        L = self._L         # length (m)
+        rho_s = self._rho_s # solid density (kg/m^3)
+        Cp_gas = self._Cp_g
+        Cp_solid = self._Cp_s
+        Cv = self._Cv
 
+        ## Adsorbent infor ##
+        k_MTC = np.array(self._k_mtc)
+        iso_fn = self._iso
+        dH_ad = np.array(self._dH)
+
+        ## Feed conditions ##
+        P_inlet = self._P_inlet
+        T_inlet = self._T_inlet
+        y_inlet = np.array(self._y_inlet)
+
+        def massenerbal(y,t):
+            C = np.zeros(self._n_comp)
+            q = np.zeros(self._n_comp)
+            for ii in np.arange(len(q)):
+                C[ii] = y[ii]
+                q[ii] = y[ii + self._n_comp]
+            T = y[-1]         # Temperature (K)
+            
+            ## Average heat capacity ## 
+            Cp_av = np.sum(C*epsi*Cp_gas) + rho_s*(1-epsi)*Cp_solid # J/m^3/K
+            Cp_av_inlet = np.sum(Cp_gas*y_inlet)        # J/mol/K
+            R_gas = 8.3145  # J/mol/K
+            p_gas = C*R_gas*T/1E5 # pressure in (bar)
+            P_ov = np.sum(p_gas)
+
+            # Valve operation
+            mdot_in = Cv*(P_inlet - P_ov)*P_ov*1E5/R_gas/T # m^3/sec --> mol/sec
+            qeq = iso_fn(p_gas, T)
+            if len(k_MTC) == 2:
+                dqdt = k_MTC[:,0]*(qeq - q) + k_MTC[:,1]*(qeq - q)**2
+            else:
+                dqdt = k_MTC*(qeq - q)
+
+            dCdt = y_inlet*mdot_in/epsi/A_cr/L - rho_s*(1-epsi)/epsi*dqdt
+            dTdt  = Cp_av_inlet*(T_inlet-T)*mdot_in/Cp_av/A_cr/L + rho_s*(1-epsi)/Cp_av*np.sum(dH_ad*dqdt)
+            if np.isscalar(dCdt):
+                dCdt = [dCdt]
+            if np.isscalar(dqdt):
+                dqdt = [dqdt]
+            dydt = np.concatenate([dCdt, dqdt,[dTdt]])
+            
+            return dydt
+        ## Intiial conditiosn ##
+        C_ov = self._P_init/R_gas/self._T_init*1E5
+        C_init = np.zeros(self._n_comp)
+        for ii in np.arange(self._n_comp):
+            C_init[ii] = C_ov*y_init[ii]
+        y0 = np.concatenate([C_init, self._q_init, [self._T_init]])
+        y_outlet = odeint(massenerbal, y0,t_dom)
+        self._y = y_outlet
+        return y_outlet, t_dom
+    
 # %% Test the defined class "tank"
-t1 = tank(5,0.031416,2)
-print(t1)
-
-
 
 # %% Test "adsorbent_info"
-import pyiast
-import pandas as pd
-# Zeolite 13X
-par_ch4 = [7.26927417, 0.33068804] # Based on mol/kg vs bar
-par_n2 = [0.62864572, 7.26379457, 1.47727665, 0.04093633] # Based on mol/kg vs bar
-dH_list = [16372.5284,11675.65] ## J/mol
-def Lang(p_in,par):
-    qtmp = par[0] * par[1]*p_in/(1+par[1]*p_in)
-    return qtmp
+if __name__ == '__main__':
+    import pyiast
+    import pandas as pd
+    # Zeolite 13X
+    t1 = tank(5,0.031416,2)
+    print(t1)
 
-def DSLa(p_in,par):
-    qtmp1 = par[0]*par[2]*p_in/(1+par[2]*p_in)
-    qtmp2 = par[1]*par[3]*p_in/(1+par[3]*p_in)
-    qtmp_return = qtmp1 + qtmp2
-    return qtmp_return
-P_tmp = np.linspace(0, 49)
-q_ch4 = Lang(P_tmp,par_ch4)
-#print(di_ch4)
-di_ch4 = {'p':P_tmp,
-          'q':q_ch4}
-df_ch4 = pd.DataFrame(di_ch4)
-#print(df_ch4)
-iso0 = pyiast.ModelIsotherm(df_ch4,
-                            loading_key='q',pressure_key = 'p',
-                            model= 'Langmuir', 
-                            param_guess = {'M': par_ch4[0],'K':par_ch4[1]})
-q_n2 = DSLa(P_tmp, par_n2)
-di_n2 = {
-    'p':P_tmp,
-    'q':q_n2}
-df_n2 = pd.DataFrame(di_n2)
-iso1 = pyiast.ModelIsotherm(
-    df_n2,
-    pressure_key= 'p', loading_key = 'q',
-    model = 'DSLangmuir', 
-    param_guess = {
-        'M1':par_n2[0],
-        'M2':par_n2[1],
-        'K1':par_n2[2],
-        'K2':par_n2[3]
-    }
-)
-print(iso0.params)
-print(iso1.params)
-def Arrh(T,T_ref, dH):
-    ret = np.exp(np.abs(dH)/8.3145*(1/T - 1/T_ref))
-    return ret
+    par_ch4 = [7.26927417, 0.33068804] # Based on mol/kg vs bar
+    par_n2 = [0.62864572, 7.26379457, 1.47727665, 0.04093633] # Based on mol/kg vs bar
+    dH_list = [16372.5284,11675.65] ## J/mol
+    def Lang(p_in,par):
+        qtmp = par[0] * par[1]*p_in/(1+par[1]*p_in)
+        return qtmp
 
-def iso_mix(P,T,):
-    P = np.zeros(2)
-    P_norm0 = Arrh(T,180,dH_list[0])*P[0]
-    P_norm1 = Arrh(T,180,dH_list[1])*P[1]
-    P[0] = P_norm0
-    P[1] = P_norm1
-    if np.sum(P) > 0:
-        x_frac = P/np.sum(P)
-    else:
-        x_frac = np.zeros(2)
-    if x_frac[0] < 0.005:
-        q = np.zeros(2)
-        q[0] = 0
-        q[1] = iso0.loading(P_norm0)
-        return q
-    elif x_frac[1] < 0.005:
-        q = np.zeros(2)
-        q[0] = iso1.loading(P_norm1)
-        q[1] = 0
-        return q
-    elif x_frac[0] < 0 and x_frac[1] < 0:
-        q = np.zeros(2)
-        return q
-t1.adsorbent_info(iso_mix,)
-print(t1)
+    def DSLa(p_in,par):
+        qtmp1 = par[0]*par[2]*p_in/(1+par[2]*p_in)
+        qtmp2 = par[1]*par[3]*p_in/(1+par[3]*p_in)
+        qtmp_return = qtmp1 + qtmp2
+        return qtmp_return
+    P_tmp = np.linspace(0, 49)
+    q_ch4 = Lang(P_tmp,par_ch4)
+    #print(di_ch4)
+    di_ch4 = {'p':P_tmp,
+            'q':q_ch4}
+    df_ch4 = pd.DataFrame(di_ch4)
+    #print(df_ch4)
+    iso0 = pyiast.ModelIsotherm(df_ch4,
+                                loading_key='q',pressure_key = 'p',
+                                model= 'Langmuir', 
+                                param_guess = {'M': par_ch4[0],'K':par_ch4[1]})
+    q_n2 = DSLa(P_tmp, par_n2)
+    di_n2 = {
+        'p':P_tmp,
+        'q':q_n2}
+    df_n2 = pd.DataFrame(di_n2)
+    iso1 = pyiast.ModelIsotherm(
+        df_n2,
+        pressure_key= 'p', loading_key = 'q',
+        model = 'DSLangmuir', 
+        param_guess = {
+            'M1':par_n2[0],
+            'M2':par_n2[1],
+            'K1':par_n2[2],
+            'K2':par_n2[3]
+        }
+    )
+    print(iso0.params)
+    print(iso1.params)
+    def Arrh(T,T_ref, dH):
+        ret = np.exp(np.abs(dH)/8.3145*(1/T - 1/T_ref))
+        return ret
+
+    def iso_mix(P,T,):
+        P = np.zeros(2)
+        P_norm0 = Arrh(T,180,dH_list[0])*P[0]
+        P_norm1 = Arrh(T,180,dH_list[1])*P[1]
+        P[0] = P_norm0
+        P[1] = P_norm1
+        if np.sum(P) > 0:
+            x_frac = P/np.sum(P)
+        else:
+            x_frac = np.zeros(2)
+        if x_frac[0] < 0.005:
+            q = np.zeros(2)
+            q[0] = 0
+            q[1] = iso0.loading(P_norm0)
+            return q
+        elif x_frac[1] < 0.005:
+            q = np.zeros(2)
+            q[0] = iso1.loading(P_norm1)
+            q[1] = 0
+            return q
+        elif x_frac[0] < 0 and x_frac[1] < 0:
+            q = np.zeros(2)
+            return q
+    t1.adsorbent_info(iso_mix,)
+    print(t1)
 
 # %% gas property
-molar_mass = [0.016, 0.028]     # kg/mol 
-t1.gas_prop_info(molar_mass)
-print(t1)
+    molar_mass = [0.016, 0.028]     # kg/mol 
+    t1.gas_prop_info(molar_mass)
+    print(t1)
 
 
 # %% mass transfer
-k_mass_trans = [
-    [0.00001, 0.00000001],  # [1st: m/sec, 2nd: (m kg)/(sec mol)]
-    [0.00001, 0.00000001]]  # [1st: m/sec, 2nd: (m kg)/(sec mol)]
-Surface_A_per_V = 1.5E9     # (1.5 x 10^9) m^2/m^3
-t1.mass_trans_info(k_mass_trans,Surface_A_per_V)
-print(t1)
+    k_mass_trans = [
+        [0.00001, 0.00000001],  # [1st: m/sec, 2nd: (m kg)/(sec mol)]
+        [0.00001, 0.00000001]]  # [1st: m/sec, 2nd: (m kg)/(sec mol)]
+    Surface_A_per_V = 1.5E9     # (1.5 x 10^9) m^2/m^3
+    t1.mass_trans_info(k_mass_trans,Surface_A_per_V)
+    print(t1)
 
 # %% thermal information
-dH_list = [16372.5284, 11675.65]# J/mol
-T_ref_list = [180,180]          # K
-Cp_g = np.array([40.63,29.22])  # Gas heat capacity: J/mol/K
-Cp_s = 948                      # Solid heat capacity: J/kg/K
-t1.thermal_info(dH_list,Cp_s, Cp_g) 
+    dH_list = [16372.5284, 11675.65]# J/mol
+    T_ref_list = [180,180]          # K
+    Cp_g = np.array([40.63,29.22])  # Gas heat capacity: J/mol/K
+    Cp_s = 948                      # Solid heat capacity: J/kg/K
+    t1.thermal_info(dH_list,Cp_s, Cp_g) 
 
-print(t1)
+    print(t1)
+# %% feed flow information
+    P_inlet = 5         # (bar)
+    T_inlet = 298       # (K)
+    y_inlet = [0.5, 0.5]    # ([mol/mol, mol/mol])    
+    C_valve = 1E-3      # m^3/sec/bar
+    t1.feed_flow_info(P_inlet, T_inlet,y_inlet, C_valve)
+    print(t1)
+# %% Intial conditions
+    P_init = 1          # (bar)
+    T_init = 298        # (K)
+    y_init = [1,0]
+    t1.initialC_info(P_init,T_init, y_init)
+    print(t1)
+
+# %% Run
+    yres_tmp,tres_tmp = t1.run_mamoen(200)
+    plt.plot(tres_tmp,yres_tmp[:,0],label = 'component 1')
+    plt.plot(tres_tmp,yres_tmp[:,1],label = 'component 2')
+    plt.xlabel('time (sec)')
+    plt.ylabel(r'concentration (mol/m$^3$)')
+    plt.legend(fontsize = 12)
+    plt.show()
+
+    plt.figure()
+    Pres_tmp =(yres_tmp[:,0] + yres_tmp[:,1])*8.3145*yres_tmp[:,-1]/1E5
+    plt.plot(tres_tmp,Pres_tmp)
+    plt.ylabel('pressuer (bar)')
+    plt.show()
 
 # %% thermal information
 
