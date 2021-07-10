@@ -217,24 +217,43 @@ class tank:
         C_ov = self._P_init/R_gas/self._T_init*1E5
         C_init = np.zeros(self._n_comp)
         for ii in np.arange(self._n_comp):
-            C_init[ii] = C_ov*y_init[ii]
+            C_init[ii] = C_ov*self._y_init[ii]
         y0 = np.concatenate([C_init, self._q_init, [self._T_init]])
         y_outlet = odeint(massenerbal, y0,t_dom)
         self._y = y_outlet
         self._t = t_dom
         return y_outlet, t_dom
+    def next_init(self, change_init = True):
+        n_comp = self._n_comp
+        y = self._y
+        C_ov = 0
+        q_init = np.zeros(n_comp)
+        C_init = np.zeros(n_comp)
+        for ii in np.arange(n_comp):
+            C_init[ii] = y[-1,ii]
+            C_ov = C_ov + C_init[ii]
+            q_init[ii] = y[-1,n_comp+ii]
+        y_init = C_init/C_ov
+        T_init = y[-1,-1]
+        P_init = C_ov*R_gas*T_init/1E5
+        #q_init = q_init
+        if change_init:
+            self._P_init = P_init
+            self._T_init = T_init
+            self._y_init = y_init
+            self._q_init = q_init
+        return P_init,T_init,y_init,q_init
 
     def Graph(
         self, index, yaxis_label = None,
-        figsize = [7,5],dpi = 85, legloc = [1,1],
+        figsize = [7,5],dpi = 85,
         file_name = None, y = None, color = 'k'
         ):
-        one_sec = self._n_sec
         if y == None:
             y = self._y
         #lstyle = ['-','--','-.',(0,(3,3,1,3,1,3)),':']
         fig,ax = plt.subplots(figsize = figsize, dpi = dpi)
-        ax.plot(self._t, self._y[:,index],
+        ax.plot(self._t, y[:,index],
         linewidth = 1.8,
         color = color)
         ax.set_ylabel(yaxis_label,fontsize = 15)
@@ -242,8 +261,7 @@ class tank:
         plt.xticks(fontsize = 13)
         plt.yticks(fontsize = 13)
         plt.grid(ls = ':')
-        fig.legend(fontsize = 14,bbox_to_anchor = legloc)
-        
+                
         if yaxis_label == None:
             ylab = 'Variable index = {}'.format(index)
             ax.set_ylabel(ylab, fontsize = 15)
@@ -252,16 +270,13 @@ class tank:
         
         if file_name != None:
             fig.savefig(file_name,bbox_inches='tight')
-        else:
-            plt.show()
         return fig, ax
 
     def Graph_P(
         self, yaxis_label = None,
-        figsize = [7,5],dpi = 85, legloc = [1,1],
+        figsize = [7,5],dpi = 85, 
         file_name = None, y = None, color = 'k'
         ):
-        one_sec = self._n_sec
         if y == None:
             y = self._y
         n_comp = self._n_comp
@@ -277,7 +292,7 @@ class tank:
         plt.grid(ls = ':')
         ax.set_ylabel(yaxis_label,fontsize = 15)
         ax.set_xlabel('time (sec)', fontsize = 15)
-        fig.legend(fontsize = 14,bbox_to_anchor = legloc)
+        #ax.set_title('Pressure', fontsize = 16)
         if yaxis_label == None:
             ylab = 'pressure (bar)'
             ax.set_ylabel(ylab, fontsize = 15)
@@ -286,10 +301,91 @@ class tank:
         
         if file_name != None:
             fig.savefig(file_name,bbox_inches='tight')
-        else:
-            plt.show()
+
         return fig, ax
-          
+
+    ## Copy the         
+    def copy(self):
+        import copy
+        self_new = copy.deepcopy(self)
+        return self_new
+
+def Graph_multi(indx,*argv, yaxis_label = None,
+figsize = [7,5],dpi = 85,
+file_name = None, color = 'k'):
+    y = np.array([argv[0][0][0,indx]])
+    t = np.array([argv[0][1][0]])
+    t_end = 0 
+    for arg in argv:
+        y_tmp = arg[0][1:,indx]
+        t_tmp = t_end + arg[1][1:]
+        y = np.concatenate([y,y_tmp])
+        t = np.concatenate([t,t_tmp])
+        t_end = t_tmp[-1]
+        #y = np.reshape(y,[-1])
+        #t = np.reshape(t,[-1])
+    fig,ax = plt.subplots(figsize = figsize, dpi = dpi)
+    ax.plot(t, y,
+    linewidth = 1.8,
+    color = color)
+    ax.set_ylabel(yaxis_label,fontsize = 15)
+    ax.set_xlabel('time (sec)', fontsize = 15)
+    plt.xticks(fontsize = 13)
+    plt.yticks(fontsize = 13)
+    plt.grid(ls = ':')
+    #fig.legend(fontsize = 14,bbox_to_anchor = legloc)
+    
+    if yaxis_label == None:
+        ylab = 'Variable index = {}'.format(indx)
+        ax.set_ylabel(ylab, fontsize = 15)
+    else:
+        ax.set_ylabel(yaxis_label, fontsize = 15)
+    
+    if file_name != None:
+        fig.savefig(file_name,bbox_inches='tight')
+
+    return fig, ax
+
+def Graph_multi_P(
+    *argv, yaxis_label = None,
+    figsize = [7,5],dpi = 85,
+    file_name = None, color = 'k'):
+    n_comp = np.int32((len(argv[0][0][0])-1)/2)
+    y = np.array([argv[0][0][0,0:n_comp]])
+    T = np.array([argv[0][0][0,-1]])
+    t = np.array([argv[0][1][0]])
+    
+    t_end = 0 
+    for arg in argv:
+        y_tmp = arg[0][1:,0:n_comp]
+        T_tmp = arg[0][1:,-1]
+        t_tmp = t_end + arg[1][1:]
+        y = np.concatenate([y,y_tmp])
+        t = np.concatenate([t,t_tmp])
+        T = np.concatenate([T,T_tmp])
+        t_end = t_tmp[-1]
+        #y = np.reshape(y,[-1])
+        #t = np.reshape(t,[-1])
+    P = np.sum(y, axis = 1)*R_gas*T/1E5 # (bar)
+    fig,ax = plt.subplots(figsize = figsize, dpi = dpi)
+    ax.plot(t, P,
+    linewidth = 1.8,
+    color = color)
+    ax.set_ylabel(yaxis_label,fontsize = 15)
+    ax.set_xlabel('time (sec)', fontsize = 15)
+    plt.xticks(fontsize = 13)
+    plt.yticks(fontsize = 13)
+    plt.grid(ls = ':')
+    #fig.legend(fontsize = 14,bbox_to_anchor = legloc)
+    
+    if yaxis_label == None:
+        ylab = 'Pressure (bar)'
+        ax.set_ylabel(ylab, fontsize = 15)
+    else:
+        ax.set_ylabel(yaxis_label, fontsize = 15)
+    if file_name != None:
+        fig.savefig(file_name,bbox_inches='tight')
+    return fig, ax
     
 # %% Test the defined class "tank"
 
@@ -409,16 +505,16 @@ if __name__ == '__main__':
     print(t1)
 
 # %% Run
-    yres_tmp,tres_tmp = t1.run_mamoen(200)
-
+    sim_res1 = t1.run_mamoen(200)
 
 # %% Graph
     # Gas components
-    fig1,ax1 = t1.Graph(0,'Component 1')
-    fig2,ax2 = t1.Graph(1, 'Component 2')
+    fig1,ax1 = t1.Graph(0,'Component 1', color = 'b')
+    fig2,ax2 = t1.Graph(1, 'Component 2', color = 'r')
     # Pressure
-    fig_P,ax_P = t1.Graph_P()
-    # Two components compare
+    #fig_P,ax_P = t1.Graph_P()
+    
+    # Two component graphs in a single sheet
     fig_tot,ax_tot = plt.subplots()
     ax_tot.plot(ax1.lines[0].get_xdata(), ax1.lines[0].get_ydata(),
     linewidth = 2,
@@ -426,28 +522,18 @@ if __name__ == '__main__':
     ax_tot.plot(ax2.lines[0].get_xdata(), ax2.lines[0].get_ydata(),
     linewidth = 2,
     label = 'Component 2')
-    plt.legend(fontsize = 13)
-    #ax_tot.plot(ax2.lines[0].get_data())
-    plt.show()
-    
-    #fig_P.show()
-    
-
-'''
-    plt.plot(tres_tmp,yres_tmp[:,0],label = 'component 1')
-    plt.plot(tres_tmp,yres_tmp[:,1],label = 'component 2')
-    plt.xlabel('time (sec)')
-    plt.ylabel(r'concentration (mol/m$^3$)')
-    plt.legend(fontsize = 12)
+    plt.legend(fontsize = 14)
+    ax_tot.set_ylabel(r'concentration (mol/m$^{3}$)',fontsize = 13)
+    ax_tot.set_xlabel('time (sec)', fontsize = 13)
+    ax_tot.tick_params(axis = 'both', labelsize = 12)
     plt.show()
 
-    plt.figure()
-    Pres_tmp =(yres_tmp[:,0] + yres_tmp[:,1])*8.3145*yres_tmp[:,-1]/1E5
-    plt.plot(tres_tmp,Pres_tmp)
-    plt.ylabel('pressuer (bar)')
+# %% Second run from the previous time point (t0 = 200) and entire graph
+    t1.feed_flow_info(10,300,y_inlet, C_valve)
+    t1.next_init()
+    sim_res2 = t1.run_mamoen(200)
+
+    fig_multi, ax_multi = Graph_multi(0, sim_res1,sim_res2,
+    yaxis_label = 'Gas concentration 1')
+    fig_multi_P, ax_multi_P = Graph_multi_P(sim_res1,sim_res2)
     plt.show()
-'''
-# %% thermal information
-
-
-

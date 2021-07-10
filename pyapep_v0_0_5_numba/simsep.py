@@ -545,7 +545,7 @@ class column:
         return y_result, self._z, t_dom
 
 ## Functions for after-run processing
-    def next_init(self):
+    def next_init(self, change_init = True):
         N = self._N
         y_end = self._y[-1,:]
         C = []
@@ -579,6 +579,13 @@ class column:
         P_init = P_ov
         y_init = y
         q_init = q
+
+        if change_init:
+            self._P_init = P_init
+            self._Tg_init= Tg_init
+            self._Ts_init = Ts_init
+            self._y_init = y_init
+            self._q_init = q_init 
         return P_init, Tg_init, Ts_init , y_init, q_init
     
     def change_init_node(self, N_new):
@@ -672,7 +679,6 @@ class column:
             plt.ylabel('volumetric flowrate (m$^{3}$/sec)', fontsize =15)
             plt.xticks(fontsize = 14)
             plt.yticks(fontsize = 14)
-            plt.show()
         return Q_0, Q_L
     
     def breakthrough(self, draw_graph = False):
@@ -706,19 +712,20 @@ class column:
             plt.ylabel('mole fraction (mol/mol)', fontsize =15)
             plt.xticks(fontsize = 14)
             plt.yticks(fontsize = 14)
-            plt.show()
+    
         return fn_y
  
     def Graph(self, every_n_sec, index, 
               loc = [1,1], yaxis_label = None, 
-              file_name = None, y = None,):
+              file_name = None, 
+              figsize = [7,5], dpi = 85, y = None,):
         N = self._N
         one_sec = self._n_sec
         n_show = one_sec*every_n_sec
         if y == None:
             y = self._y
         lstyle = ['-','--','-.',(0,(3,3,1,3,1,3)),':']
-        fig, ax = plt.subplots(figsize = [4, 3], dpi = 90)
+        fig, ax = plt.subplots(figsize = figsize, dpi = 90)
         cc= 0
         lcolor = 'k'
         for j in range(0,len(self._y), n_show):
@@ -741,15 +748,16 @@ class column:
             ax.set_ylabel(yaxis_label, fontsize = 15)
         plt.xticks(fontsize = 13)
         plt.yticks(fontsize = 13)
+        plt.grid(linestyle = ':')
         if file_name != None:
             fig.savefig(file_name, bbox_inches='tight')
-        else:
-            plt.show()
+        
         return fig, ax
         
     def Graph_P(self, every_n_sec, loc = [1,1], 
                 yaxis_label = 'Pressure (bar)',
-                file_name = 'Graph_P.png', y = None,):
+                file_name = None, 
+                figsize = [7,5], dpi = 85, y = None,):
         N = self._N
         one_sec = self._n_sec
         n_show = one_sec*every_n_sec
@@ -759,7 +767,7 @@ class column:
         P = np.zeros(N)
         for ii in range(self._n_comp):
             P = P + self._y[:,(ii)*N:(ii+1)*N]*R_gas*self._Tg_res/1E5
-        fig, ax = plt.subplots(figsize = [4, 3], dpi = 90)
+        fig, ax = plt.subplots(figsize = figsize, dpi = dpi)
         cc= 0
         for j in range(0,len(self._y), n_show):
             if j <= 1:
@@ -777,14 +785,14 @@ class column:
         ax.set_ylabel(yaxis_label, fontsize = 15)
         plt.xticks(fontsize = 13)
         plt.yticks(fontsize = 13)
-        fig.savefig(file_name, bbox_inches='tight')
-        #fig.show()
-        return fig, ax
-    
+        plt.grid(linestyle = ':')
+        if file_name != None:
+            fig.savefig(file_name, bbox_inches='tight')
+        return fig, ax    
 
 # %% When only this code is run (name == main)
 if __name__ == '__main__':
-    N = 26
+    N = 21
     A_cros = 0.031416
     L = 1
     c1 = column(L,A_cros, n_component = 2,N_node = N)
@@ -847,3 +855,12 @@ if __name__ == '__main__':
     
     ## print here
     print(c1)
+    c1.run_mamoen(400,CPUtime_print = True)
+    c1.Graph(
+        50,0,loc = [0.8,0.85], 
+        yaxis_label=r'C$_{1}$ (mol/m$^{3}$)',
+        figsize = [8.5,5])
+    c1.Graph_P(
+        50, loc = [0.8,0.85],
+        figsize = [8.5,5],)
+    plt.show()
