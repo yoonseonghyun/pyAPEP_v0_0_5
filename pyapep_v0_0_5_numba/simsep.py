@@ -37,6 +37,26 @@ def Ergun(C_array,T_array, M_molar, mu_vis, D_particle,epsi_void,d,dd,d_fo, N):
     
     dv_return = d_fo@v_return
     return v_return, dv_return
+
+def Ergun_test(dP,M_molar, mu_vis, D_particle,epsi_void):
+    rho_g = 40*M_molar
+    Vs_Vg = (1-epsi_void)/epsi_void
+    A =1.75*rho_g/D_particle*Vs_Vg*np.ones_like(dP)
+    B = 150*mu_vis/D_particle**2*Vs_Vg**2*np.ones_like(dP)
+    C = dP
+ 
+    ind_posi = B**2-4*A*C >= 0
+    ind_nega = ind_posi == False
+    v_pos = (-B[ind_posi]+ np.sqrt(B[ind_posi]**2-4*A[ind_posi]*C[ind_posi]))/(2*A[ind_posi])
+    v_neg = (B[ind_nega] - np.sqrt(B[ind_nega]**2+4*A[ind_nega]*C[ind_nega]))/(2*A[ind_nega])
+    
+    v_return = np.zeros_like(dP)
+    v_return[ind_posi] = v_pos
+    v_return[ind_nega] = v_neg
+    
+    return v_return
+
+
 def change_node_fn(z_raw, y_raw, N_new):
     if isinstance(y_raw,list):
         fn_list = []
@@ -997,6 +1017,8 @@ n_sec=5, Cv_btw=0.1, valve_select = [1,1], CPUtime_print = False):
     tic = time.time() / 60 # in minute
     P_sum1 = np.mean(column1._P_init)
     P_sum2 = np.mean(column2._P_init)
+    P_mean = (P_sum1+P_sum2)/2
+    T_mean = (np.mean(column1._Tg_init)+np.mean(column2._Tg_init))/2
     if P_sum1 > P_sum2:
         c1_tmp = column1.copy()
         c2_tmp = column2.copy()
@@ -1037,6 +1059,11 @@ n_sec=5, Cv_btw=0.1, valve_select = [1,1], CPUtime_print = False):
     n_t = t_max_int*n_sec+ 1
     n_comp = column1._n_comp
     
+    # Target pressure
+    C_sta1 = np.zeros(n_comp)
+    for ii in range(n_comp):
+        C_sta1[ii] = c1_tmp._y_init[ii][0]*P_mean/R_gas/T_mean*1E5
+
     t_dom = np.linspace(0,t_max_int, n_t)
     column1._n_sec = n_sec
     column2._n_sec = n_sec
@@ -1201,7 +1228,8 @@ n_sec=5, Cv_btw=0.1, valve_select = [1,1], CPUtime_print = False):
         dCdt2 = []
         for ii in range(n_comp):
             dCdt_tmp = -v1*dC1[ii] -C1[ii]*dv1 + D_dis1[ii]*ddC1[ii] - (1-epsi1)/epsi1*rho_s1*dqdt1[ii]
-            dCdt_tmp[0] = +(v_in1*0 - v1[1]*C1[ii][0])/h1 - (1-epsi1)/epsi1*rho_s1*dqdt1[ii][0]               ######BOUNDARY C########
+            #dCdt_tmp[0] = +(v_in1*0 - v1[1]*C1[ii][0])/h1 - (1-epsi1)/epsi1*rho_s1*dqdt1[ii][0]               ######BOUNDARY C########
+            dCdt_tmp[0] = +(v_in1)/2*(C_sta1[ii] - C1[ii][0])/h1 - (1-epsi1)/epsi1*rho_s1*dqdt1[ii][0]               ######BOUNDARY C########
             dCdt_tmp[-1]= +(v_out1+v1[-1])/2*(C1[ii][-2]-C1[ii][-1])/h1 - (1-epsi1)/epsi1*rho_s1*dqdt1[ii][-1] ######BOUNDARY C######## (KEY PROBLEM)
             dCdt1.append(dCdt_tmp)
         inout_ratio_mass=epsi1*c1_tmp._A/epsi2/c2_tmp._A
@@ -1231,9 +1259,9 @@ n_sec=5, Cv_btw=0.1, valve_select = [1,1], CPUtime_print = False):
 
         # column 1 dTgdt
         dTgdt1[0] = h_heat1*a_surf1/epsi1*(Ts1[0] - Tg1[0])/Cov_Cpg1[0]
-        dTgdt1[0] = dTgdt1[0] + v_in1*(0-Tg1[0])/h1                         ######BOUNDARY C########
+        dTgdt1[0] = dTgdt1[0] + v_in1*(0-Tg1[0])/h1                         ######BOUNDARY C########: Tg[0]
         dTgdt1[-1] = h_heat1*a_surf1/epsi1*(Ts1[-1] - Tg1[-1])/Cov_Cpg1[-1]
-        dTgdt1[-1] = dTgdt1[-1] + (v1[-1]+v_out1)/2*(Tg1[-2] - Tg1[-1])/h1  ######BOUNDARY C########
+        dTgdt1[-1] = dTgdt1[-1] + (v1[-1]+v_out1)/2*(Tg1[-2] - Tg1[-1])/h1  ######BOUNDARY C########: Tg[-1]
         # column 2 dTgdt
         inout_ratio_heat = Cov_Cpg1[-1]/Cov_Cpg2[0]
         dTgdt2[0] = h_heat2*a_surf2/epsi2*(Ts2[0] - Tg2[0])/Cov_Cpg2[0]
@@ -1488,18 +1516,22 @@ n_sec=5, Cv_btw=0.1, valve_select = [1,1], CPUtime_print = False):
         if c1_tmp._order_MTC == 1:
             for ii in range(n_comp):
                 dqdt_tmp = k_mass1[ii]*(qsta1[ii] - q1[ii])*a_surf1
+                dqdt_tmp = np.zeros(N1)
                 dqdt1.append(dqdt_tmp)
         elif c1_tmp._order_MTC == 2:
             for ii in range(n_comp):
                 dqdt_tmp = k_mass1[ii][0]*(qsta1[ii] - q1[ii])*a_surf1 + k_mass1[ii][1]*(qsta1[ii] - q1[ii])**2*a_surf1
+                dqdt_tmp = np.zeros(N1)
                 dqdt1.append(dqdt_tmp)
         if c2_tmp._order_MTC == 1:
             for ii in range(n_comp):
                 dqdt_tmp = k_mass2[ii]*(qsta2[ii] - q2[ii])*a_surf2
+                dqdt_tmp = np.zeros(N2)
                 dqdt2.append(dqdt_tmp)
         elif c2_tmp._order_MTC == 2:
             for ii in range(n_comp):
                 dqdt_tmp = k_mass2[ii][0]*(qsta2[ii] - q2[ii])*a_surf2 + k_mass2[ii][1]*(qsta2[ii] - q2[ii])**2*a_surf2
+                dqdt_tmp = np.zeros(N2)
                 dqdt2.append(dqdt_tmp)        
 
         # Valve equations (v_in and v_out)
@@ -1639,7 +1671,19 @@ if __name__ == '__main__':
     A_cros = 0.031416
     L = 1
     c1 = column(L,A_cros, n_component = 2,N_node = N)
- 
+    '''
+    
+    dP = np.linspace(-100, 100)
+    M_m_test  = [0.044, 0.028]      ## molar mass    (kg/mol)
+    mu_test = [1.47E-5, 1.74E-5]    ## gas viscosity (Pa sec)
+    D_particle_dia = 0.01   # particle diameter (m)
+    epsi_test = 0.4         # macroscopic void fraction (m^3/m^3)
+    v_test = Ergun_test(dP,M_m_test[0],mu_test[0],D_particle_dia,epsi_test)
+    plt.plot(dP,v_test)
+    plt.grid()
+    plt.show()
+    '''
+    
     ## Adsorbent
     isopar1 = [3.0, 1]
     isopar2 = [1.0, 0.5]
@@ -1684,7 +1728,7 @@ if __name__ == '__main__':
     Pout_test = 1       # outlet pressure (bar)
     Cvout_test = 2E-2   # outlet valve constant (m/sec/bar)
     c1.boundaryC_info(Pout_test,Pin_test,Tin_test,yin_test,
-    Cvin_test,Cvout_test,Q_in_test,False)
+    Cvin_test,Cvout_test,Q_in_test,assigned_v_option = False)
  
     #c1.boundaryC_info(Pout_test, Pin_test,Tin_test,yin_test,Cvin_test)
  
@@ -1698,7 +1742,7 @@ if __name__ == '__main__':
     
     ## print here
     print(c1)
-    c1.run_mamoen(1000,CPUtime_print = True)
+    c1.run_mamoen(500,CPUtime_print = True)
     c1.Graph(
         100,0,loc = [0.8,0.85], 
         yaxis_label=r'C$_{1}$ (mol/m$^{3}$)',
@@ -1709,10 +1753,10 @@ if __name__ == '__main__':
     c2 = c1.copy()
     c1.next_init()
 
-    #c1.boundaryC_info(Pout_test,Pin_test,Tin_test,yin_test,
-    #0.0*Cvin_test,Cvout_test,Q_in_test,False, foward_flow_direction=True)
-    #c2.boundaryC_info(Pout_test,Pin_test,Tin_test,yin_test,
-    #0.0*Cvin_test,0,Q_in_test,False, foward_flow_direction=True)
+    c1.boundaryC_info(Pout_test,Pin_test,Tin_test,yin_test,
+    0.0*Cvin_test,Cvout_test,Q_in_test,False, foward_flow_direction=True)
+    c2.boundaryC_info(Pout_test,Pin_test,Tin_test,yin_test,
+    0.0*Cvin_test,0,Q_in_test,False, foward_flow_direction=True)
     
     #c1.run_mamoen(100,n_sec = 20,CPUtime_print= True)
     #c2.run_mamoen(100,n_sec = 20,CPUtime_print=True)
@@ -1734,9 +1778,9 @@ if __name__ == '__main__':
     #c2.change_init_node(11)
 
     step_P_eq(
-        c1,c2,200,n_sec = 100,
+        c1,c2,100,n_sec = 20,
         valve_select = [1,1],
-        Cv_btw=0.02,CPUtime_print=True)
+        Cv_btw=0.1,CPUtime_print=True)
     plt.show()
     Legend_loc = [1.15, 0.9]
     c1.Graph_P(10, loc = Legend_loc)
