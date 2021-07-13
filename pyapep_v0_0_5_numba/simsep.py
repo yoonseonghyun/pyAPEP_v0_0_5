@@ -993,7 +993,7 @@ class column:
         return self_new
 
 def step_P_eq_alt(column1, column2, t_max,
-n_sec=5, Cv_btw=1E-4, valve_select = [1,1], CPUtime_print = False):
+n_sec=5, Cv_btw=0.1, valve_select = [1,1], CPUtime_print = False):
     tic = time.time() / 60 # in minute
     P_sum1 = np.mean(column1._P_init)
     P_sum2 = np.mean(column2._P_init)
@@ -1013,6 +1013,7 @@ n_sec=5, Cv_btw=1E-4, valve_select = [1,1], CPUtime_print = False):
             A_flip1[ii, -1-ii] = 1
         c1_tmp._P_init =c1_tmp._P_init@A_flip1
         c1_tmp._Tg_init=c1_tmp._Tg_init@A_flip1
+        c1_tmp._Ts_init=c1_tmp._Ts_init@A_flip1
         c1_tmp._y_init=c1_tmp._y_init@A_flip1
         c1_tmp._q_init=c1_tmp._q_init@A_flip1
         flip1_later = True
@@ -1024,6 +1025,7 @@ n_sec=5, Cv_btw=1E-4, valve_select = [1,1], CPUtime_print = False):
             A_flip2[ii, -1-ii] = 1
         c2_tmp._P_init =c2_tmp._P_init@A_flip2
         c2_tmp._Tg_init=c2_tmp._Tg_init@A_flip2
+        c2_tmp._Ts_init=c2_tmp._Ts_init@A_flip2
         c2_tmp._y_init=c2_tmp._y_init@A_flip2
         c2_tmp._q_init=c2_tmp._q_init@A_flip2
         flip2_later=True
@@ -1036,6 +1038,8 @@ n_sec=5, Cv_btw=1E-4, valve_select = [1,1], CPUtime_print = False):
     n_comp = column1._n_comp
     
     t_dom = np.linspace(0,t_max_int, n_t)
+    column1._n_sec = n_sec
+    column2._n_sec = n_sec
     if t_max_int < t_max:
         t_dom = np.concatenate((t_dom, [t_max]))
     N1 = c1_tmp._N
@@ -1197,14 +1201,14 @@ n_sec=5, Cv_btw=1E-4, valve_select = [1,1], CPUtime_print = False):
         dCdt2 = []
         for ii in range(n_comp):
             dCdt_tmp = -v1*dC1[ii] -C1[ii]*dv1 + D_dis1[ii]*ddC1[ii] - (1-epsi1)/epsi1*rho_s1*dqdt1[ii]
-            dCdt_tmp[0] = +v_in1*(0 - C1[ii][0])/h1 - (1-epsi1)/epsi1*rho_s1*dqdt1[ii][0]
-            dCdt_tmp[-1]= +(v_out1+v1[-1])/2*(C1[ii][-2]- C1[ii][-1])/h1 - (1-epsi1)/epsi1*rho_s1*dqdt1[ii][-1]
+            dCdt_tmp[0] = +(v_in1*0 - v1[1]*C1[ii][0])/h1 - (1-epsi1)/epsi1*rho_s1*dqdt1[ii][0]               ######BOUNDARY C########
+            dCdt_tmp[-1]= +(v_out1+v1[-1])/2*(C1[ii][-2]-C1[ii][-1])/h1 - (1-epsi1)/epsi1*rho_s1*dqdt1[ii][-1] ######BOUNDARY C######## (KEY PROBLEM)
             dCdt1.append(dCdt_tmp)
         inout_ratio_mass=epsi1*c1_tmp._A/epsi2/c2_tmp._A
         for ii in range(n_comp):
             dCdt_tmp = -v2*dC2[ii] -C2[ii]*dv2 + D_dis2[ii]*ddC2[ii] - (1-epsi2)/epsi2*rho_s2*dqdt2[ii]
-            dCdt_tmp[0] = +v_in2*inout_ratio_mass*(C1[ii][-1] - C2[ii][0])/h2 - (1-epsi2)/epsi2*rho_s2*dqdt2[ii][0]
-            dCdt_tmp[-1]= +(v2[-1]+v_out2)/2*(C2[ii][-2]- C2[ii][-1])/h2 - (1-epsi2)/epsi2*rho_s2*dqdt2[ii][-1]
+            dCdt_tmp[0] = +(v_in2*inout_ratio_mass*C1[ii][-1] - v2[1]*C2[ii][0])/h2 - (1-epsi2)/epsi2*rho_s2*dqdt2[ii][0] ######BOUNDARY C########
+            dCdt_tmp[-1]= +(v2[-1]*C2[ii][-2]- v_out2*C2[ii][-1])/h2 - (1-epsi2)/epsi2*rho_s2*dqdt2[ii][-1]  ######BOUNDARY C########
             dCdt2.append(dCdt_tmp)
 
         # Temperature (gas)
@@ -1227,15 +1231,15 @@ n_sec=5, Cv_btw=1E-4, valve_select = [1,1], CPUtime_print = False):
 
         # column 1 dTgdt
         dTgdt1[0] = h_heat1*a_surf1/epsi1*(Ts1[0] - Tg1[0])/Cov_Cpg1[0]
-        dTgdt1[0] = dTgdt1[0] + v_in1*(0-Tg1[0])/h1
+        dTgdt1[0] = dTgdt1[0] + v_in1*(0-Tg1[0])/h1                         ######BOUNDARY C########
         dTgdt1[-1] = h_heat1*a_surf1/epsi1*(Ts1[-1] - Tg1[-1])/Cov_Cpg1[-1]
-        dTgdt1[-1] = dTgdt1[-1] + (v1[-1]+v_out1)/2*(Tg1[-2] - Tg1[-1])/h1
+        dTgdt1[-1] = dTgdt1[-1] + (v1[-1]+v_out1)/2*(Tg1[-2] - Tg1[-1])/h1  ######BOUNDARY C########
         # column 2 dTgdt
         inout_ratio_heat = Cov_Cpg1[-1]/Cov_Cpg2[0]
         dTgdt2[0] = h_heat2*a_surf2/epsi2*(Ts2[0] - Tg2[0])/Cov_Cpg2[0]
-        dTgdt2[0] = dTgdt2[0] + v_in2*inout_ratio_mass*(Tg1[-1]  - Tg2[0])/h2*inout_ratio_heat
+        dTgdt2[0] = dTgdt2[0] + (v_in2*inout_ratio_mass*Tg1[-1]  - v2[1]*Tg2[0])/h2*inout_ratio_heat  ######BOUNDARY C########
         dTgdt2[-1] = h_heat2*a_surf2/epsi2*(Ts2[-1] - Tg2[-1])/Cov_Cpg2[-1]
-        dTgdt2[-1] = dTgdt2[-1] + (v2[-1]+v_out2)/2*(Tg2[-2] - Tg2[-1])/h2
+        dTgdt2[-1] = dTgdt2[-1] + (v2[-1]+v_out2)/2*(Tg2[-2] - 0)/h2        ######BOUNDARY C########
 
         # column 1&2 T boundary conditions 
         for ii in range(n_comp):
@@ -1304,7 +1308,7 @@ n_sec=5, Cv_btw=1E-4, valve_select = [1,1], CPUtime_print = False):
 
 
 def step_P_eq(column1, column2, t_max,
-n_sec=5, Cv_btw=1E-4, valve_select = [1,1], CPUtime_print = False):
+n_sec=5, Cv_btw=0.1, valve_select = [1,1], CPUtime_print = False):
     tic = time.time() / 60 # in minute
     P_sum1 = np.mean(column1._P_init)
     P_sum2 = np.mean(column2._P_init)
@@ -1324,6 +1328,7 @@ n_sec=5, Cv_btw=1E-4, valve_select = [1,1], CPUtime_print = False):
             A_flip1[ii, -1-ii] = 1
         c1_tmp._P_init =c1_tmp._P_init@A_flip1
         c1_tmp._Tg_init=c1_tmp._Tg_init@A_flip1
+        c1_tmp._Ts_init=c1_tmp._Ts_init@A_flip1
         c1_tmp._y_init=c1_tmp._y_init@A_flip1
         c1_tmp._q_init=c1_tmp._q_init@A_flip1
         flip1_later = True
@@ -1335,14 +1340,15 @@ n_sec=5, Cv_btw=1E-4, valve_select = [1,1], CPUtime_print = False):
             A_flip2[ii, -1-ii] = 1
         c2_tmp._P_init =c2_tmp._P_init@A_flip2
         c2_tmp._Tg_init=c2_tmp._Tg_init@A_flip2
+        c2_tmp._Ts_init=c2_tmp._Ts_init@A_flip2
         c2_tmp._y_init=c2_tmp._y_init@A_flip2
         c2_tmp._q_init=c2_tmp._q_init@A_flip2
         flip2_later=True
     else:
         flip2_later = False
     t_max_int = np.int32(np.floor(t_max))
-    c1_tmp._n_sec = n_sec
-    c2_tmp._n_sec = n_sec
+    column1._n_sec = n_sec
+    column2._n_sec = n_sec
     n_t = t_max_int*n_sec+ 1
     n_comp = column1._n_comp
     
@@ -1545,7 +1551,7 @@ n_sec=5, Cv_btw=1E-4, valve_select = [1,1], CPUtime_print = False):
         inout_ratio_heat = Cov_Cpg1[-1]*epsi1*c1_tmp._A/Cov_Cpg2[0]/epsi2/c2_tmp._A
         dTgdt2[0] = h_heat2*a_surf2/epsi2*(Ts2[0] - Tg2[0])/Cov_Cpg2[0]
         dTgdt2[0] = dTgdt2[0] + (v_in2*Tg1[-1]*inout_ratio_heat  - v2[1]*Tg2[0])/h2
-        dTgdt2[-1] = h_heat2*a_surf2/epsi2*(Ts2[-1] - Tg2[-1])/Cov_Cpg2[-1]
+        dTgdt2[-1] = h_heat2*a_surf2/epsi2*(Ts2[-1] - 0)/Cov_Cpg2[-1]
         dTgdt2[-1] = dTgdt2[-1] + (v2[-1]*Tg2[-2]*Cov_Cpg2[-2]/Cov_Cpg2[-1] - v_out2*0)/h2
                 
         # column 1&2 T boundary conditions 
@@ -1698,15 +1704,15 @@ if __name__ == '__main__':
         yaxis_label=r'C$_{1}$ (mol/m$^{3}$)',
         figsize = [8.5,5])
     c1.Graph_P(
-        100, loc = [0.8,0.85],
+        100, loc = [1.1,0.85],
         figsize = [8.5,5],)
     c2 = c1.copy()
     c1.next_init()
 
-    c1.boundaryC_info(Pout_test,Pin_test,Tin_test,yin_test,
-    0.0*Cvin_test,Cvout_test,Q_in_test,False)
-    c2.boundaryC_info(Pout_test,Pin_test,Tin_test,yin_test,
-    0.1*Cvin_test,0,Q_in_test,False)
+    #c1.boundaryC_info(Pout_test,Pin_test,Tin_test,yin_test,
+    #0.0*Cvin_test,Cvout_test,Q_in_test,False, foward_flow_direction=True)
+    #c2.boundaryC_info(Pout_test,Pin_test,Tin_test,yin_test,
+    #0.0*Cvin_test,0,Q_in_test,False, foward_flow_direction=True)
     
     #c1.run_mamoen(100,n_sec = 20,CPUtime_print= True)
     #c2.run_mamoen(100,n_sec = 20,CPUtime_print=True)
@@ -1724,11 +1730,19 @@ if __name__ == '__main__':
     #c1.Graph(10,0)
      
     ## Pressure eqaulization step
-    c1.change_init_node(6)
-    c2.change_init_node(6)
-    step_P_eq(c1,c2,100,n_sec = 20,Cv_btw=0.01,CPUtime_print=True)
-    c1.Graph_P(10)
-    c2.Graph_P(10)
+    #c1.change_init_node(11)
+    #c2.change_init_node(11)
 
+    step_P_eq(
+        c1,c2,200,n_sec = 100,
+        valve_select = [1,1],
+        Cv_btw=0.02,CPUtime_print=True)
     plt.show()
-
+    Legend_loc = [1.15, 0.9]
+    c1.Graph_P(10, loc = Legend_loc)
+    c1.Graph(10,2, loc =Legend_loc)
+    c1.Graph(10,3, loc =Legend_loc)
+    c2.Graph_P(10, loc =Legend_loc)
+    c2.Graph(10,2, loc =Legend_loc)
+    c2.Graph(10,3, loc = Legend_loc)
+    plt.show( )
