@@ -3,8 +3,8 @@ from setuptools import setup
 
 setup(
     name = 'pyapep',
-    version = '0.0.6',
-    #license = 'PNU_Seongbin_Ga',
+    version = '0.0.7',
+    license = 'PNU_Seongbin_Ga',
     author = 'Seongbin Ga',
     author_email = 'sebyga@gmail.com',
     url = 'https://sebyga.github.io/HompyTest/',

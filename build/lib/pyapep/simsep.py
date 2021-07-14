@@ -84,7 +84,7 @@ def change_node_fn(z_raw, y_raw, N_new):
 # %% Column class
 class column:
     def __init__(self, L, A_cross, n_component, 
-                 N_node = 21, E_balance = True):
+                 N_node = 11, E_balance = True):
         self._L = L
         self._A = A_cross
         self._n_comp = n_component
@@ -392,7 +392,8 @@ class column:
         
         y0_tmp = C_init + q_init
         y0 = np.concatenate(y0_tmp)
-
+        
+        #RUN
         y_result = odeint(massmomebal,y0,t_dom,)
         
         if self._required['Flow direction'] == 'Backward':
@@ -561,7 +562,8 @@ class column:
         else:
             y0_tmp = C_init + q_init + [self._Tg_init] + [self._Ts_init]
         y0 = np.concatenate(y0_tmp)
-
+        
+        #RUN
         y_result = odeint(massmomeenerbal_alt,y0,t_dom,)
         
         if self._required['Flow direction'] == 'Backward':
@@ -729,7 +731,8 @@ class column:
         else:
             y0_tmp = C_init + q_init + [self._Tg_init] + [self._Ts_init]
         y0 = np.concatenate(y0_tmp)
-
+        
+        #RUN
         y_result = odeint(massmomeenerbal,y0,t_dom,)
         C_sum = 0
         for ii in range(n_comp):
@@ -1401,21 +1404,17 @@ n_sec=5, Cv_btw=0.1, valve_select = [1,1], CPUtime_print = False):
     if t_max_int_tneth < t_max/10:
         t_dom_tenth = np.concatenate((t_dom_tenth, [t_max/10]))
     
-    
-
+    #RUN1
     y_res = odeint(massmomeenbal_eq_gasonly, y0_tot_gas,t_dom_tenth)
-    plt.figure()
-    for ii in range(0,len(y_res), 5):
-        plt.plot(c1_tmp._z, y_res[ii,:N1])
-    plt.figure()
-    for ii in range(0,len(y_res),5):
-        plt.plot(c1_tmp._z, y_res[ii,N1:2*N1])
+
     # Update concentration
     y0_tot[:N1*n_comp] = y_res[-1,:N1*n_comp]
     y0_tot[n_var_tot1:n_var_tot1+N2*n_comp] = y_res[-1,N1*n_comp:]
     # Update temperature
     y0_tot[n_var_tot1-2*N1:n_var_tot1-1*N1] = T_mean*np.ones(N1)
     y0_tot[-2*N2:-1*N2] = T_mean*np.ones(N2)
+    
+    #RUN2
     y_res = odeint(massmomeenbal_eq, y0_tot,t_dom)
     y_res1 = y_res[:,:n_var_tot1]
     y_res2 = y_res[:,n_var_tot1:]
@@ -1738,6 +1737,8 @@ n_sec=5, Cv_btw=0.1, valve_select = [1,1], CPUtime_print = False):
         #if np.sum(bool_list) > 0:
         #    dydt = 1/2*dydt
         return dydt         
+    
+    #RUN
     y_res = odeint(massmomeenbal_eq, y0_tot,t_dom)
     y_res1 = y_res[:,:n_var_tot1]
     y_res2 = y_res[:,n_var_tot1:]
@@ -2057,6 +2058,8 @@ n_sec=5, Cv_btw=0.1, valve_select = [1,1], CPUtime_print = False):
         #if np.sum(bool_list) > 0:
         #    dydt = 1/2*dydt
         return dydt         
+
+    #RUN
     y_res = odeint(massmomeenbal_eq, y0_tot,t_dom)
     y_res1 = y_res[:,:n_var_tot1]
     y_res2 = y_res[:,n_var_tot1:]
@@ -2075,7 +2078,6 @@ n_sec=5, Cv_btw=0.1, valve_select = [1,1], CPUtime_print = False):
             C_sum = C_sum + y_res1[-1,ii*N1+2]
             C_sum = C_sum + y_res2[-1,ii*N2+2]
         return y_res12
-        '''
         if C_sum < 0.5:
             y_res12 = step_P_eq_alt2(column1,column2, t_max, n_sec = n_sec,
             Cv_btw = Cv_btw, valve_select = valve_select)
@@ -2093,7 +2095,6 @@ n_sec=5, Cv_btw=0.1, valve_select = [1,1], CPUtime_print = False):
                 print('Simulation of this step is completed.')
                 print('This took {0:9.3f} mins to run. \n'.format(toc))
             return y_res12
-        '''
     if flip1_later:
         y_res_flip1 = np.zeros_like(y_res1)
         for ii in range(n_comp*2+2):
@@ -2135,7 +2136,6 @@ if __name__ == '__main__':
     L = 1
     c1 = column(L,A_cros, n_component = 2,N_node = N)
     '''
-    
     dP = np.linspace(-100, 100)
     M_m_test  = [0.044, 0.028]      ## molar mass    (kg/mol)
     mu_test = [1.47E-5, 1.74E-5]    ## gas viscosity (Pa sec)
@@ -2146,7 +2146,6 @@ if __name__ == '__main__':
     plt.grid()
     plt.show()
     '''
-    
     ## Adsorbent
     isopar1 = [3.0, 1]
     isopar2 = [1.0, 0.5]
@@ -2220,25 +2219,6 @@ if __name__ == '__main__':
     0.0*Cvin_test,Cvout_test,Q_in_test,False, foward_flow_direction=True)
     c2.boundaryC_info(Pout_test,Pin_test,Tin_test,yin_test,
     0.0*Cvin_test,0,Q_in_test,False, foward_flow_direction=True)
-    
-    #c1.run_mamoen(100,n_sec = 20,CPUtime_print= True)
-    #c2.run_mamoen(100,n_sec = 20,CPUtime_print=True)
-    #c1.Graph_P(10)
-    #c2.Graph_P(10)
-    #c1.Q_valve(draw_graph = True)
-    #c1.next_init()
-    #c1.boundaryC_info(Pout_test,Pin_test,Tin_test,yin_test,
-    #0.1*Cvin_test,0,Q_in_test,False)
-    #c1.run_mamo(100,CPUtime_print = True)
-    #c1.Graph_P(10)
-    #c1.Graph(10,0)
-    #c1.run_mamoen(100,CPUtime_print = True)
-    #c1.Graph_P(10)
-    #c1.Graph(10,0)
-     
-    ## Pressure eqaulization step
-    #c1.change_init_node(11)
-    #c2.change_init_node(11)
 
     step_P_eq(
         c1,c2,100,n_sec = 50,
