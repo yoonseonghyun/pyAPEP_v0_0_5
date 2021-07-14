@@ -1012,7 +1012,448 @@ class column:
         self_new = copy.deepcopy(self)
         return self_new
 
-def step_P_eq_alt(column1, column2, t_max,
+
+
+
+def step_P_eq_alt1(column1, column2, t_max,
+n_sec=5, Cv_btw=0.1, valve_select = [1,1], CPUtime_print = False):
+    tic = time.time() / 60 # in minute
+    P_sum1 = np.mean(column1._P_init)
+    P_sum2 = np.mean(column2._P_init)
+    P_mean = (P_sum1+P_sum2)/2
+    T_mean = (np.mean(column1._Tg_init)+np.mean(column2._Tg_init))/2
+    if P_sum1 > P_sum2:
+        c1_tmp = column1.copy()
+        c2_tmp = column2.copy()
+        val_sel = np.array(valve_select)
+        switch_later = False
+    else:
+        c1_tmp = column2.copy()
+        c2_tmp = column1.copy()
+        val_sel = np.array([valve_select[0], valve_select[1]])
+        switch_later = True
+    if val_sel[0] == 0:
+        A_flip1 = np.zeros([c1_tmp._N,c1_tmp._N])
+        for ii in range(c1_tmp._N):
+            A_flip1[ii, -1-ii] = 1
+        c1_tmp._P_init =c1_tmp._P_init@A_flip1
+        c1_tmp._Tg_init=c1_tmp._Tg_init@A_flip1
+        c1_tmp._Ts_init=c1_tmp._Ts_init@A_flip1
+        c1_tmp._y_init=c1_tmp._y_init@A_flip1
+        c1_tmp._q_init=c1_tmp._q_init@A_flip1
+        flip1_later = True
+    else:
+        flip1_later = False
+    if val_sel[1]:
+        A_flip2 = np.zeros([c2_tmp._N,c2_tmp._N])
+        for ii in range(c2_tmp._N):
+            A_flip2[ii, -1-ii] = 1
+        c2_tmp._P_init =c2_tmp._P_init@A_flip2
+        c2_tmp._Tg_init=c2_tmp._Tg_init@A_flip2
+        c2_tmp._Ts_init=c2_tmp._Ts_init@A_flip2
+        c2_tmp._y_init=c2_tmp._y_init@A_flip2
+        c2_tmp._q_init=c2_tmp._q_init@A_flip2
+        flip2_later=True
+    else:
+        flip2_later = False
+    t_max_int = np.int32(np.floor(t_max))
+    c1_tmp._n_sec = n_sec
+    c2_tmp._n_sec = n_sec
+    n_t = t_max_int*n_sec+ 1
+    n_comp = column1._n_comp
+    
+    # Target pressure
+    C_sta1 = np.zeros(n_comp)
+    for ii in range(n_comp):
+        C_sta1[ii] = c1_tmp._y_init[ii][0]*P_mean/R_gas/T_mean*1E5
+    print(C_sta1)
+
+    t_dom = np.linspace(0,t_max_int, n_t)
+    column1._n_sec = n_sec
+    column2._n_sec = n_sec
+    if t_max_int < t_max:
+        t_dom = np.concatenate((t_dom, [t_max]))
+
+    N1 = c1_tmp._N
+    N2 = c2_tmp._N
+    h1 = c1_tmp._h
+    h2 = c2_tmp._h
+    epsi1 = c1_tmp._epsi
+    epsi2 = c2_tmp._epsi
+
+    a_surf1 = c1_tmp._a_surf
+    a_surf2 = c2_tmp._a_surf
+    # Mass
+    D_dis1 = c1_tmp._D_disp
+    D_dis2 = c2_tmp._D_disp
+
+    k_mass1 = c1_tmp._k_mtc
+    k_mass2 = c2_tmp._k_mtc
+
+    # Heat
+    dH1 = c1_tmp._dH
+    dH2 = c2_tmp._dH
+    Cpg1 = c1_tmp._Cp_g
+    Cpg2 = c2_tmp._Cp_g
+    
+    Cps1 = c1_tmp._Cp_s
+    Cps2 = c2_tmp._Cp_s
+
+    h_heat1 = c1_tmp._h_heat
+    h_heat2 = c2_tmp._h_heat
+
+    h_ambi1 = c1_tmp._h_ambi
+    h_ambi2 = c2_tmp._h_ambi
+
+    T_ambi1 = c1_tmp._T_ambi
+    T_ambi2 = c2_tmp._T_ambi
+
+    # other parmeters
+    rho_s1 = c1_tmp._rho_s
+    rho_s2 = c2_tmp._rho_s
+    D_col1 = np.sqrt(c1_tmp._A/np.pi)*2
+    D_col2 = np.sqrt(c2_tmp._A/np.pi)*2
+
+    n_var_tot1 = c1_tmp._N * (c1_tmp._n_comp+1)*2
+    n_var_tot2 = c2_tmp._N * (c2_tmp._n_comp+1)*2
+    
+    # Initial conditions
+    y01 = []
+    y02 = []
+    for ii in range(n_comp):
+        C1_tmp = c1_tmp._P_init/R_gas/c1_tmp._Tg_init*c1_tmp._y_init[ii]*1E5    # in (mol/m^3)
+        C2_tmp = c2_tmp._P_init/R_gas/c2_tmp._Tg_init*c2_tmp._y_init[ii]*1E5    # in (mol/m^3)
+        y01.append(C1_tmp)
+        y02.append(C2_tmp)
+    for ii in range(n_comp):
+        y01.append(c1_tmp._q_init[ii])
+        y02.append(c2_tmp._q_init[ii])
+    y01.append(c1_tmp._Tg_init)
+    y02.append(c2_tmp._Tg_init)
+    y01.append(c1_tmp._Ts_init)
+    y02.append(c2_tmp._Ts_init)
+    y01 = np.concatenate(y01)
+    y02 = np.concatenate(y02)
+    y0_tot = np.concatenate([y01,y02])
+    
+    # ODE function (Gas only)
+    def massmomeenbal_eq_gasonly(y,t):
+        y1 = y[:N1*n_comp]
+        y2 = y[N1*n_comp:]
+        C1 = []
+        C2 = []
+        for ii in range(n_comp):
+            C1.append(y1[ii*N1:(ii+1)*N1])
+            C2.append(y2[ii*N2:(ii+1)*N2])
+            
+        # Derivatives
+        dC1 = []
+        dC2 = []
+        ddC1 = []
+        ddC2 = []
+        C_ov1 = np.zeros(N1)
+        C_ov2 = np.zeros(N2)
+        P_ov1 = np.zeros(N1)
+        P_ov2 = np.zeros(N2)
+        P_part1 = []
+        P_part2 = []
+        Mu1 = np.zeros(N1)
+        Mu2 = np.zeros(N2)
+        #T = self._Tg_init
+        # Temperature gradient:
+        
+        # Concentration gradient
+        # Pressure (overall&partial)
+        # Viscosity
+        for ii in range(n_comp):
+            dC1.append(c1_tmp._d@C1[ii])
+            dC2.append(c2_tmp._d@C2[ii])
+            ddC1.append(c1_tmp._dd@C1[ii])
+            ddC2.append(c2_tmp._dd@C2[ii])
+            P_part1.append(C1[ii]*R_gas*T_mean/1E5) # in bar
+            P_part2.append(C2[ii]*R_gas*T_mean/1E5) # in bar
+            C_ov1 = C_ov1 + C1[ii]
+            C_ov2 = C_ov2 + C2[ii]
+            P_ov1 = P_ov1 + C1[ii]*R_gas*T_mean
+            P_ov2 = P_ov2 + C2[ii]*R_gas*T_mean
+            Mu1 = C1[ii]*c1_tmp._mu[ii]
+            Mu2 = C2[ii]*c2_tmp._mu[ii]
+        Mu1 = Mu1/C_ov1
+        Mu2 = Mu2/C_ov2
+
+        # Ergun equation
+        v1,dv1 = Ergun(C1,T_mean,c1_tmp._M_m,Mu1,c1_tmp._D_p,epsi1,
+        c1_tmp._d,c1_tmp._dd,c1_tmp._d_fo, N1)
+        v2,dv2 = Ergun(C2,T_mean,c2_tmp._M_m,Mu2,c2_tmp._D_p,epsi2,
+        c2_tmp._d,c2_tmp._dd,c2_tmp._d_fo, N2)
+        
+        # Valve equations (v_in and v_out)
+        v_in1 = 0
+        v_out2 = 0
+        
+        v_out1 = max(Cv_btw*(P_ov1[-1]/1E5 - P_ov2[0]/1E5), 0 )  # pressure in bar
+        v_in2 = max(Cv_btw*(P_ov1[-1]/1E5 - P_ov2[0]/1E5), 0 )  # pressure in bar           
+        
+        # Gas phase concentration
+        dCdt1 = []
+        dCdt2 = []
+        for ii in range(n_comp):
+            dCdt_tmp = -v1*dC1[ii] -C1[ii]*dv1 + D_dis1[ii]*ddC1[ii]
+            #dCdt_tmp[0] = +(v_in1*0 - v1[1]*C1[ii][0])/h1 - (1-epsi1)/epsi1*rho_s1*dqdt1[ii][0]               ######BOUNDARY C########
+            dCdt_tmp[0] = +Cv_btw*(C_sta1[ii] - C1[ii][0])               ######BOUNDARY C########
+            dCdt_tmp[-1]= +(v1[-1]*C1[ii][-2]-v_out1*C1[ii][-1])/h1        ######BOUNDARY C######## (KEY PROBLEM)
+            dCdt1.append(dCdt_tmp)
+        inout_ratio_mass=epsi1*c1_tmp._A/epsi2/c2_tmp._A
+        for ii in range(n_comp):
+            dCdt_tmp = -v2*dC2[ii] -C2[ii]*dv2 + D_dis2[ii]*ddC2[ii]
+            dCdt_tmp[0] = +(v_in2*inout_ratio_mass*C1[ii][-1] - v2[1]*C2[ii][0])/h2 ######BOUNDARY C########
+            dCdt_tmp[-1]= +(v2[-1]*C2[ii][-2]- v_out2*C2[ii][-1])/h2                ######BOUNDARY C########
+            dCdt2.append(dCdt_tmp)
+
+        # Temperature (gas)
+        Cov_Cpg1 = np.zeros(N1) # Heat capacity (overall) J/K/m^3
+        Cov_Cpg2 = np.zeros(N2) # Heat capacity (overall) J/K/m^3
+        for ii in range(n_comp):
+            Cov_Cpg1 = Cov_Cpg1 + Cpg1[ii]*C1[ii]
+            Cov_Cpg2 = Cov_Cpg2 + Cpg2[ii]*C2[ii]
+
+        dydt_tmp1 = dCdt1
+        dydt_tmp2 = dCdt2
+        dydt1 = np.concatenate(dydt_tmp1)
+        dydt2 = np.concatenate(dydt_tmp2)
+        dydt = np.concatenate([dydt1,dydt2])
+        return dydt
+
+    # ODE function (Gas and Solid)
+    def massmomeenbal_eq(y,t):
+        y1 = y[:n_var_tot1]
+        y2 = y[n_var_tot1:]
+        C1 = []
+        C2 = []
+        q1 = []
+        q2 = []
+        for ii in range(n_comp):
+            C1.append(y1[ii*N1:(ii+1)*N1])
+            C2.append(y2[ii*N2:(ii+1)*N2])
+            q1.append(y1[n_comp*N1 + ii*N1 : n_comp*N1 + (ii+1)*N1])
+            q2.append(y2[n_comp*N2 + ii*N2 : n_comp*N2 + (ii+1)*N2])
+        Tg1 =y1[2*n_comp*N1 : 2*n_comp*N1 + N1 ]
+        Tg2 =y2[2*n_comp*N2 : 2*n_comp*N2 + N2 ]
+        Ts1 =y1[2*n_comp*N1 + N1 : 2*n_comp*N1 + 2*N1 ]
+        Ts2 =y2[2*n_comp*N2 + N2 : 2*n_comp*N2 + 2*N2 ]
+
+        # Derivatives
+        dC1 = []
+        dC2 = []
+        ddC1 = []
+        ddC2 = []
+        C_ov1 = np.zeros(N1)
+        C_ov2 = np.zeros(N2)
+        P_ov1 = np.zeros(N1)
+        P_ov2 = np.zeros(N2)
+        P_part1 = []
+        P_part2 = []
+        Mu1 = np.zeros(N1)
+        Mu2 = np.zeros(N2)
+        #T = self._Tg_init
+        # Temperature gradient:
+        dTg1 = c1_tmp._d@Tg1
+        dTg2 = c2_tmp._d@Tg2
+        ddTs1 =c1_tmp._dd@Ts1
+        ddTs2 =c2_tmp._dd@Ts2
+
+        # Concentration gradient
+        # Pressure (overall&partial)
+        # Viscosity
+        for ii in range(n_comp):
+            dC1.append(c1_tmp._d@C1[ii])
+            dC2.append(c2_tmp._d@C2[ii])
+            ddC1.append(c1_tmp._dd@C1[ii])
+            ddC2.append(c2_tmp._dd@C2[ii])
+            P_part1.append(C1[ii]*R_gas*Tg1/1E5) # in bar
+            P_part2.append(C2[ii]*R_gas*Tg2/1E5) # in bar
+            C_ov1 = C_ov1 + C1[ii]
+            C_ov2 = C_ov2 + C2[ii]
+            P_ov1 = P_ov1 + C1[ii]*R_gas*Tg1
+            P_ov2 = P_ov2 + C2[ii]*R_gas*Tg2
+            Mu1 = C1[ii]*c1_tmp._mu[ii]
+            Mu2 = C2[ii]*c2_tmp._mu[ii]
+        Mu1 = Mu1/C_ov1
+        Mu2 = Mu2/C_ov2
+
+        # Ergun equation
+        v1,dv1 = Ergun(C1,Tg1,c1_tmp._M_m,Mu1,c1_tmp._D_p,epsi1,
+        c1_tmp._d,c1_tmp._dd,c1_tmp._d_fo, N1)
+        v2,dv2 = Ergun(C2,Tg2,c2_tmp._M_m,Mu2,c2_tmp._D_p,epsi2,
+        c2_tmp._d,c2_tmp._dd,c2_tmp._d_fo, N2)
+        
+        # Solid phase concentration
+        qsta1 = c1_tmp._iso(P_part1, Tg1) # partial pressure in bar
+        qsta2 = c2_tmp._iso(P_part2, Tg2) # partial pressure in bar
+        dqdt1 = []
+        dqdt2 = []
+        if c1_tmp._order_MTC == 1:
+            for ii in range(n_comp):
+                dqdt_tmp = k_mass1[ii]*(qsta1[ii] - q1[ii])*a_surf1
+                dqdt1.append(dqdt_tmp)
+        elif c1_tmp._order_MTC == 2:
+            for ii in range(n_comp):
+                dqdt_tmp = k_mass1[ii][0]*(qsta1[ii] - q1[ii])*a_surf1 + k_mass1[ii][1]*(qsta1[ii] - q1[ii])**2*a_surf1
+                dqdt1.append(dqdt_tmp)
+        if c2_tmp._order_MTC == 1:
+            for ii in range(n_comp):
+                dqdt_tmp = k_mass2[ii]*(qsta2[ii] - q2[ii])*a_surf2
+                dqdt2.append(dqdt_tmp)
+        elif c2_tmp._order_MTC == 2:
+            for ii in range(n_comp):
+                dqdt_tmp = k_mass2[ii][0]*(qsta2[ii] - q2[ii])*a_surf2 + k_mass2[ii][1]*(qsta2[ii] - q2[ii])**2*a_surf2
+                dqdt2.append(dqdt_tmp)        
+
+        # Valve equations (v_in and v_out)
+        v_in1 = 0
+        v_out2 = 0
+        
+        v_out1 = max(Cv_btw*(P_ov1[-1]/1E5 - P_ov2[0]/1E5), 0 )  # pressure in bar
+        v_in2 = max(Cv_btw*(P_ov1[-1]/1E5 - P_ov2[0]/1E5), 0 )  # pressure in bar           
+        
+        # Gas phase concentration
+        dCdt1 = []
+        dCdt2 = []
+        for ii in range(n_comp):
+            dCdt_tmp = -v1*dC1[ii] -C1[ii]*dv1 + D_dis1[ii]*ddC1[ii] - (1-epsi1)/epsi1*rho_s1*dqdt1[ii]
+            #dCdt_tmp[0] = +(v_in1*0 - v1[1]*C1[ii][0])/h1 - (1-epsi1)/epsi1*rho_s1*dqdt1[ii][0]               ######BOUNDARY C########
+            dCdt_tmp[0] = +Cv_btw*(C_sta1[ii] - C1[ii][0]) - (1-epsi1)/epsi1*rho_s1*dqdt1[ii][0]               ######BOUNDARY C########
+            dCdt_tmp[-1]= +(v_out1+v1[-1])/2*(C1[ii][-2]-C1[ii][-1])/h1 - (1-epsi1)/epsi1*rho_s1*dqdt1[ii][-1] ######BOUNDARY C######## (KEY PROBLEM)
+            dCdt1.append(dCdt_tmp)
+        inout_ratio_mass=epsi1*c1_tmp._A/epsi2/c2_tmp._A
+        for ii in range(n_comp):
+            dCdt_tmp = -v2*dC2[ii] -C2[ii]*dv2 + D_dis2[ii]*ddC2[ii] - (1-epsi2)/epsi2*rho_s2*dqdt2[ii]
+            dCdt_tmp[0] = +(v_in2*inout_ratio_mass*C1[ii][-1] - v2[1]*C2[ii][0])/h2 - (1-epsi2)/epsi2*rho_s2*dqdt2[ii][0] ######BOUNDARY C########
+            dCdt_tmp[-1]= +(v2[-1]*C2[ii][-2]- v_out2*C2[ii][-1])/h2 - (1-epsi2)/epsi2*rho_s2*dqdt2[ii][-1]  ######BOUNDARY C########
+            dCdt2.append(dCdt_tmp)
+
+        # Temperature (gas)
+        Cov_Cpg1 = np.zeros(N1) # Heat capacity (overall) J/K/m^3
+        Cov_Cpg2 = np.zeros(N2) # Heat capacity (overall) J/K/m^3
+        for ii in range(n_comp):
+            Cov_Cpg1 = Cov_Cpg1 + Cpg1[ii]*C1[ii]
+            Cov_Cpg2 = Cov_Cpg2 + Cpg2[ii]*C2[ii]
+        dTgdt1 = -v1*dTg1 + h_heat1*a_surf1/epsi1*(Ts1 - Tg1)/Cov_Cpg1
+        dTgdt2 = -v2*dTg2 + h_heat2*a_surf2/epsi2*(Ts2 - Tg2)/Cov_Cpg2
+        for ii in range(n_comp):
+            # column 1
+            dTgdt1 = dTgdt1 - Cpg1[ii]*Tg1*D_dis1[ii]*ddC1[ii]/Cov_Cpg1
+            dTgdt1 = dTgdt1 + Tg1*rho_s1*(1-epsi1)/epsi1*Cpg1[ii]*dqdt1[ii]/Cov_Cpg1
+            dTgdt1 = dTgdt1 + h_ambi1*4/epsi1/D_col1*(T_ambi1 - Tg1)/Cov_Cpg1
+            # column 2
+            dTgdt2 = dTgdt2 - Cpg2[ii]*Tg2*D_dis2[ii]*ddC2[ii]/Cov_Cpg2
+            dTgdt2 = dTgdt2 + Tg2*rho_s2*(1-epsi2)/epsi2*Cpg2[ii]*dqdt2[ii]/Cov_Cpg2
+            dTgdt2 = dTgdt2 + h_ambi2*4/epsi2/D_col2*(T_ambi2 - Tg2)/Cov_Cpg2
+
+        # column 1 dTgdt
+        dTgdt1[0] = h_heat1*a_surf1/epsi1*(Ts1[0] - Tg1[0])/Cov_Cpg1[0]
+        dTgdt1[0] = dTgdt1[0] + v_in1*(0-Tg1[0])/h1                         ######BOUNDARY C########: Tg[0]
+        dTgdt1[-1] = h_heat1*a_surf1/epsi1*(Ts1[-1] - Tg1[-1])/Cov_Cpg1[-1]
+        dTgdt1[-1] = dTgdt1[-1] + (v1[-1]+v_out1)/2*(Tg1[-2] - Tg1[-1])/h1  ######BOUNDARY C########: Tg[-1]
+        # column 2 dTgdt
+        inout_ratio_heat = Cov_Cpg1[-1]/Cov_Cpg2[0]
+        dTgdt2[0] = h_heat2*a_surf2/epsi2*(Ts2[0] - Tg2[0])/Cov_Cpg2[0]
+        dTgdt2[0] = dTgdt2[0] + (v_in2*inout_ratio_mass*Tg1[-1]  - v2[1]*Tg2[0])/h2*inout_ratio_heat  ######BOUNDARY C########
+        dTgdt2[-1] = h_heat2*a_surf2/epsi2*(Ts2[-1] - Tg2[-1])/Cov_Cpg2[-1]
+        dTgdt2[-1] = dTgdt2[-1] + (v2[-1]+v_out2)/2*(Tg2[-2] - 0)/h2        ######BOUNDARY C########
+
+        # column 1&2 T boundary conditions 
+        for ii in range(n_comp):
+            dTgdt1[0] = dTgdt1[0] - Tg1[0]*Cpg1[ii]*dCdt1[ii][0]/Cov_Cpg1[0]
+            dTgdt1[-1] = dTgdt1[-1] - Tg1[-1]*Cpg1[ii]*dCdt1[ii][-1]/Cov_Cpg1[-1]
+            dTgdt2[0] = dTgdt2[0] - Tg2[0]*Cpg2[ii]*dCdt2[ii][0]/Cov_Cpg2[0]
+            dTgdt2[-1] = dTgdt2[-1] - Tg2[-1]*Cpg2[ii]*dCdt2[ii][-1]/Cov_Cpg2[-1]
+        dTsdt1 = (c1_tmp._k_cond*ddTs1+ h_heat1*a_surf1/(1-epsi1)*(Tg1-Ts1))/rho_s1/Cps1
+        dTsdt2 = (c2_tmp._k_cond*ddTs2+ h_heat2*a_surf2/(1-epsi2)*(Tg2-Ts2))/rho_s2/Cps2
+        for ii in range(n_comp):
+            dTsdt1 = dTsdt1 + abs(dH1[ii])*dqdt1[ii]/Cps1
+            dTsdt2 = dTsdt2 + abs(dH2[ii])*dqdt2[ii]/Cps2
+
+        dydt_tmp1 = dCdt1+dqdt1+[dTgdt1] + [dTsdt1]
+        dydt_tmp2 = dCdt2+dqdt2+[dTgdt2] + [dTsdt2]
+        dydt1 = np.concatenate(dydt_tmp1)
+        dydt2 = np.concatenate(dydt_tmp2)
+        
+        dydt = np.concatenate([dydt1,dydt2])
+        
+        # Check whether this converges
+        #if np.max(np.abs(dydt1[0])) > 100:
+        #    aaa  = 100/0
+        #bool_list = np.abs(dydt) > y
+        #if np.sum(bool_list) > 0:
+        #    dydt = 1/2*dydt
+        return dydt         
+    C1_init = []
+    C2_init = []
+    for ii in range(n_comp):
+        C1_init.append(c1_tmp._P_init*1E5/R_gas/T_mean*c1_tmp._y_init[ii])
+        C2_init.append(c2_tmp._P_init*1E5/R_gas/T_mean*c2_tmp._y_init[ii])
+    y0_tot_gas = np.concatenate(C1_init+C2_init)
+    
+    t_max_int_tneth = np.int32(np.floor(t_max/10))
+    n_t_tenth = t_max_int_tneth*n_sec+ 1
+    t_dom_tenth = np.linspace(0,t_max/10, n_t_tenth)
+    if t_max_int_tneth < t_max/10:
+        t_dom_tenth = np.concatenate((t_dom_tenth, [t_max/10]))
+    
+    
+
+    y_res = odeint(massmomeenbal_eq_gasonly, y0_tot_gas,t_dom_tenth)
+    plt.figure()
+    for ii in range(0,len(y_res), 5):
+        plt.plot(c1_tmp._z, y_res[ii,:N1])
+    plt.figure()
+    for ii in range(0,len(y_res),5):
+        plt.plot(c1_tmp._z, y_res[ii,N1:2*N1])
+    # Update concentration
+    y0_tot[:N1*n_comp] = y_res[-1,:N1*n_comp]
+    y0_tot[n_var_tot1:n_var_tot1+N2*n_comp] = y_res[-1,N1*n_comp:]
+    # Update temperature
+    y0_tot[n_var_tot1-2*N1:n_var_tot1-1*N1] = T_mean*np.ones(N1)
+    y0_tot[-2*N2:-1*N2] = T_mean*np.ones(N2)
+    y_res = odeint(massmomeenbal_eq, y0_tot,t_dom)
+    y_res1 = y_res[:,:n_var_tot1]
+    y_res2 = y_res[:,n_var_tot1:]
+    if flip1_later:
+        y_res_flip1 = np.zeros_like(y_res1)
+        for ii in range(n_comp*2+2):
+             y_tmp = y_res1[:,ii*N1:(ii+1)*N1]
+             y_res_flip1[:,ii*N1:(ii+1)*N1] = y_tmp@A_flip1
+        y_res1 = y_res_flip1
+    if flip2_later:
+        y_res_flip2 = np.zeros_like(y_res2)
+        for ii in range(n_comp*2+2):
+            y_tmp = y_res2[:,ii*N2:(ii+1)*N2]
+            y_res_flip2[:,ii*N2:(ii+1)*N2] = y_tmp@A_flip2
+        y_res2 = y_res_flip2
+    
+    toc = time.time()/60 - tic
+    c1_tmp._CPU_min = toc
+    c2_tmp._CPU_min = toc
+    if CPUtime_print:
+            print('Simulation of this step is completed.')
+            print('This took {0:9.3f} mins to run. \n'.format(toc))       
+    column1._t = t_dom
+    column2._t = t_dom
+    if switch_later:
+        column1._y = y_res2
+        column2._y = y_res1
+        column1._Tg_res = y_res2[:,n_comp*2*N2 : n_comp*2*N2+N2]
+        column2._Tg_res = y_res1[:,n_comp*2*N1 : n_comp*2*N1+N1]
+        return [[y_res2,column1._z, t_dom], [y_res1,column2._z, t_dom]]
+    else:
+        column1._y = y_res1
+        column2._y = y_res2
+        column1._Tg_res = y_res1[:,n_comp*2*N1 : n_comp*2*N1+N1]
+        column2._Tg_res = y_res2[:,n_comp*2*N2 : n_comp*2*N2+N2]
+        return [[y_res1,column1._z, t_dom], [y_res2,column2._z, t_dom]]
+
+def step_P_eq_alt2(column1, column2, t_max,
 n_sec=5, Cv_btw=0.1, valve_select = [1,1], CPUtime_print = False):
     tic = time.time() / 60 # in minute
     P_sum1 = np.mean(column1._P_init)
@@ -1335,6 +1776,8 @@ n_sec=5, Cv_btw=0.1, valve_select = [1,1], CPUtime_print = False):
         return [[y_res1,column1._z, t_dom], [y_res2,column2._z, t_dom]]
 
 
+
+
 def step_P_eq(column1, column2, t_max,
 n_sec=5, Cv_btw=0.1, valve_select = [1,1], CPUtime_print = False):
     tic = time.time() / 60 # in minute
@@ -1622,15 +2065,35 @@ n_sec=5, Cv_btw=0.1, valve_select = [1,1], CPUtime_print = False):
         C_sum = C_sum + y_res1[-1,ii*N1+2]
         C_sum = C_sum + y_res2[-1,ii*N2+2]
     if C_sum < 0.5:
-        y_res12 = step_P_eq_alt(column1,column2, t_max, n_sec = n_sec,
+        y_res12 = step_P_eq_alt1(column1,column2, t_max, n_sec = n_sec,
         Cv_btw = Cv_btw, valve_select = valve_select)
         toc = time.time()/60 - tic
-        column1._CPU_min = toc
-        column2._CPU_min = toc
-        if CPUtime_print:
-            print('Simulation of this step is completed.')
-            print('This took {0:9.3f} mins to run. \n'.format(toc))
+        C_sum = 0
+        y_res1 = y_res[:,:n_var_tot1]
+        y_res2 = y_res[:,n_var_tot1:]
+        for ii in range(n_comp):
+            C_sum = C_sum + y_res1[-1,ii*N1+2]
+            C_sum = C_sum + y_res2[-1,ii*N2+2]
         return y_res12
+        '''
+        if C_sum < 0.5:
+            y_res12 = step_P_eq_alt2(column1,column2, t_max, n_sec = n_sec,
+            Cv_btw = Cv_btw, valve_select = valve_select)
+            toc = time.time()/60 - tic
+            column1._CPU_min = toc
+            column2._CPU_min = toc
+            if CPUtime_print:
+                print('Simulation of this step is completed.')
+                print('This took {0:9.3f} mins to run. \n'.format(toc))
+            return y_res12
+        else:
+            column1._CPU_min = toc
+            column2._CPU_min = toc
+            if CPUtime_print:
+                print('Simulation of this step is completed.')
+                print('This took {0:9.3f} mins to run. \n'.format(toc))
+            return y_res12
+        '''
     if flip1_later:
         y_res_flip1 = np.zeros_like(y_res1)
         for ii in range(n_comp*2+2):
@@ -1778,9 +2241,9 @@ if __name__ == '__main__':
     #c2.change_init_node(11)
 
     step_P_eq(
-        c1,c2,100,n_sec = 20,
+        c1,c2,100,n_sec = 50,
         valve_select = [1,1],
-        Cv_btw=0.1,CPUtime_print=True)
+        Cv_btw=0.05,CPUtime_print=True)
     plt.show()
     Legend_loc = [1.15, 0.9]
     c1.Graph_P(10, loc = Legend_loc)
@@ -1790,3 +2253,4 @@ if __name__ == '__main__':
     c2.Graph(10,2, loc =Legend_loc)
     c2.Graph(10,3, loc = Legend_loc)
     plt.show( )
+    
