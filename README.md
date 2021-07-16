@@ -6,11 +6,11 @@
 This is for developing python-based Adsorption Process Evaluation Package (pyapep).
 
 - [01 - Installation](https://github.com/sebyga/pyAPEP_v0_0_5#Installation)
-- [02 - Modules](https://github.com/sebyga/pyAPEP_v0_0_5#Modules)
+- [02 - Modules](https://github.com/sebyga/pyAPEP_v0_0_5#Modules) 
 
 
 # Installation
-You can install this package by using pip.
+You can install this package by using pip. 
 ``` r
 pip install pyapep
 ```
